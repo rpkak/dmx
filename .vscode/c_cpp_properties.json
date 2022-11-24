@@ -1,0 +1,37 @@
+{
+    "env": {
+        "kernel": "linux-headers-5.15.76-v8+"
+    },
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/src/${env:kernel}/arch/arm64/include",
+                "/usr/src/${env:kernel}/arch/arm64/include/generated",
+                "/usr/src/${env:kernel}/arch/arm64/include/uapi",
+                "/usr/src/${env:kernel}/arch/arm64/include/generated/uapi",
+                "/usr/src/${env:kernel}/include",
+                "/usr/src/${env:kernel}/include/generated",
+                "/usr/src/${env:kernel}/include/uapi",
+                "/usr/src/${env:kernel}/include/generated/uapi",
+                "/usr/lib/gcc/aarch64-linux-gnu/10/include/"
+            ],
+            "compilerArgs": [
+                "-nostdinc",
+                "-include",
+                "/usr/src/${env:kernel}/include/linux/kconfig.h",
+                "-include",
+                "/usr/src/${env:kernel}/include/linux/compiler_types.h"
+            ],
+            "defines": [
+                "__KERNEL__",
+                "MODULE"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "intelliSenseMode": "linux-gcc-arm64",
+            "cStandard": "gnu17"
+        }
+    ],
+    "version": 4
+}
