@@ -19,78 +19,90 @@ MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("rpkak");
 MODULE_DESCRIPTION("Try to do DMX");
 
+static struct task_struct *dmxThread;
+
 #define DMX_MAX_BUF_LEN 512
 
 static uint16_t bufLen = 0;
 static uint8_t buf[DMX_MAX_BUF_LEN];
 
-static void sendDMX(void)
+static int DMXThread(void *data)
 {
-    ktime_t time = ktime_get();
+    ktime_t breakTime = ktime_get();
+    ktime_t time;
 
-    // BREAK
-    gpio_set_value(4, 0);
-    addBitTimes(time, 25);
-
-    // MARK AFTER BREAK
-    waitUntilTime(time);
-    gpio_set_value(4, 1);
-    addBitTimes(time, 3);
-
-    // SLOT 0 (START CODE)
-    waitUntilTime(time);
-    gpio_set_value(4, 0);
-    addBitTimes(time, 9);
-
-    waitUntilTime(time);
-    gpio_set_value(4, 1);
-    addBitTimes(time, 2);
-
-    for (uint16_t i = 0; i < bufLen; i++)
+    while (!kthread_should_stop())
     {
-        // START BIT
+        breakTime = ktime_add_us(breakTime, 22728);
+        time = breakTime;
+
+        // BREAK
+        waitUntilTime(time);
+
+        gpio_set_value(4, 0);
+        addBitTimes(time, 25);
+
+        // MARK AFTER BREAK
+        waitUntilTime(time);
+        gpio_set_value(4, 1);
+        addBitTimes(time, 3);
+
+        // SLOT 0 (START CODE)
         waitUntilTime(time);
         gpio_set_value(4, 0);
-        addBitTimes(time, 1);
+        addBitTimes(time, 9);
 
-        // DATA BITS
-        waitUntilTime(time);
-        gpio_set_value(4, (buf[i] >> 0) & 0x1);
-        addBitTimes(time, 1);
-
-        waitUntilTime(time);
-        gpio_set_value(4, (buf[i] >> 1) & 0x1);
-        addBitTimes(time, 1);
-
-        waitUntilTime(time);
-        gpio_set_value(4, (buf[i] >> 2) & 0x1);
-        addBitTimes(time, 1);
-
-        waitUntilTime(time);
-        gpio_set_value(4, (buf[i] >> 3) & 0x1);
-        addBitTimes(time, 1);
-
-        waitUntilTime(time);
-        gpio_set_value(4, (buf[i] >> 4) & 0x1);
-        addBitTimes(time, 1);
-
-        waitUntilTime(time);
-        gpio_set_value(4, (buf[i] >> 5) & 0x1);
-        addBitTimes(time, 1);
-
-        waitUntilTime(time);
-        gpio_set_value(4, (buf[i] >> 6) & 0x1);
-        addBitTimes(time, 1);
-
-        waitUntilTime(time);
-        gpio_set_value(4, (buf[i] >> 7) & 0x1);
-        addBitTimes(time, 1);
-
-        // STOP BITS
         waitUntilTime(time);
         gpio_set_value(4, 1);
         addBitTimes(time, 2);
+
+        for (uint16_t i = 0; i < bufLen; i++)
+        {
+            // START BIT
+            waitUntilTime(time);
+            gpio_set_value(4, 0);
+            addBitTimes(time, 1);
+
+            // DATA BITS
+            waitUntilTime(time);
+            gpio_set_value(4, (buf[i] >> 0) & 0x1);
+            addBitTimes(time, 1);
+
+            waitUntilTime(time);
+            gpio_set_value(4, (buf[i] >> 1) & 0x1);
+            addBitTimes(time, 1);
+
+            waitUntilTime(time);
+            gpio_set_value(4, (buf[i] >> 2) & 0x1);
+            addBitTimes(time, 1);
+
+            waitUntilTime(time);
+            gpio_set_value(4, (buf[i] >> 3) & 0x1);
+            addBitTimes(time, 1);
+
+            waitUntilTime(time);
+            gpio_set_value(4, (buf[i] >> 4) & 0x1);
+            addBitTimes(time, 1);
+
+            waitUntilTime(time);
+            gpio_set_value(4, (buf[i] >> 5) & 0x1);
+            addBitTimes(time, 1);
+
+            waitUntilTime(time);
+            gpio_set_value(4, (buf[i] >> 6) & 0x1);
+            addBitTimes(time, 1);
+
+            waitUntilTime(time);
+            gpio_set_value(4, (buf[i] >> 7) & 0x1);
+            addBitTimes(time, 1);
+
+            // STOP BITS
+            waitUntilTime(time);
+            gpio_set_value(4, 1);
+            addBitTimes(time, 2);
+        }
     }
+    return 0;
 }
 
 static struct proc_dir_entry *dmxProc;
@@ -115,7 +127,6 @@ static ssize_t dmxProcWrite(struct file *file, const char __user *userBuf, size_
     size -= copy_from_user(buf + *off, userBuf, size);
     *off += size;
     bufLen = *off;
-    sendDMX();
     return size;
 }
 
@@ -141,12 +152,6 @@ static int __init initModule(void)
         goto err_free_gpio;
     }
 
-    // dmxThread = kthread_run(DMXThread, NULL, "DMX THREAD");
-    // if (!dmxThread)
-    // {
-    //     printk(KERN_ERR "Could not start kthread.\n");
-    //     goto err_free_gpio;
-    // }
 
     dmxProc = proc_create("dmx", 0644, NULL, &dmxProcOps);
     if (dmxProc == NULL)
@@ -155,9 +160,18 @@ static int __init initModule(void)
         goto err_free_gpio;
     }
 
+    dmxThread = kthread_run(DMXThread, NULL, "DMX THREAD");
+    if (!dmxThread)
+    {
+        printk(KERN_ERR "Could not start kthread.\n");
+        goto err_remove_proc;
+    }
+
     return 0;
 // err_stop_thread:
 //     kthread_stop(dmxThread);
+err_remove_proc:
+    proc_remove(dmxProc);
 err_free_gpio:
     gpio_free(4);
 err_none:
@@ -166,10 +180,10 @@ err_none:
 
 static void __exit exitModule(void)
 {
+    kthread_stop(dmxThread);
     proc_remove(dmxProc);
     gpio_set_value(4, 0);
     gpio_free(4);
-    // kthread_stop(dmxThread);
     printk("exit aabbcc\n");
 }
 
