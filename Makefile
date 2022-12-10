@@ -5,8 +5,12 @@ test: all
 	sudo rmmod dmx.ko
 	sudo insmod dmx.ko
 
-all:
+all: dmx.dtbo
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 clean:
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	rm -f dmx.dtbo
+
+%.dtbo: %.dts
+	dtc -I dts -O dtb -o $@ $^

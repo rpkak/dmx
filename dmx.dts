@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+/ {
+	compatible = "raspberrypi,4-model-b";
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			dmx {
+				compatible = "gpio-dmx";
+				dmx-gpios = <&gpio 22 0>,
+				            <&gpio 23 1>;
+				// clk-gpio = <&gpio 3 0>;
+			};
+		};
+	};
+};

@@ -1,12 +1,9 @@
 #include <linux/module.h>
-#include <linux/init.h>
 #include <linux/gpio.h>
-#include <linux/kthread.h>
-#include <linux/ktime.h>
-#include <linux/delay.h>
 #include <linux/proc_fs.h>
-
-// static const unsigned GPIO_PIN = 4;
+#include <linux/platform_device.h>
+#include <linux/gpio/consumer.h>
+#include <linux/kthread.h>
 
 #define addBitTimes(time, n) time = ktime_add_us(time, 4 * (n));
 
@@ -26,6 +23,14 @@ static struct task_struct *dmxThread;
 static uint16_t bufLen = 0;
 static uint8_t buf[DMX_MAX_BUF_LEN];
 
+static struct gpio_descs *descs = NULL;
+// static struct gpio_desc *clk = NULL;
+
+static inline int setGPIOVal(unsigned long *value_bitmap)
+{
+    return gpiod_set_array_value(descs->ndescs, descs->desc, descs->info, value_bitmap);
+}
+
 static int DMXThread(void *data)
 {
     ktime_t breakTime = ktime_get();
@@ -38,67 +43,70 @@ static int DMXThread(void *data)
 
         // BREAK
         waitUntilTime(time);
-
-        gpio_set_value(4, 0);
+        setGPIOVal(&(unsigned long){0b00});
         addBitTimes(time, 25);
 
         // MARK AFTER BREAK
         waitUntilTime(time);
-        gpio_set_value(4, 1);
+        setGPIOVal(&(unsigned long){0b11});
         addBitTimes(time, 3);
+
+        // gpiod_set_value(clk, 1);
 
         // SLOT 0 (START CODE)
         waitUntilTime(time);
-        gpio_set_value(4, 0);
+        setGPIOVal(&(unsigned long){0b00});
         addBitTimes(time, 9);
 
         waitUntilTime(time);
-        gpio_set_value(4, 1);
+        setGPIOVal(&(unsigned long){0b11});
         addBitTimes(time, 2);
+
+        // gpiod_set_value(clk, 0);
 
         for (uint16_t i = 0; i < bufLen; i++)
         {
             // START BIT
             waitUntilTime(time);
-            gpio_set_value(4, 0);
+            setGPIOVal(&(unsigned long){0b00});
             addBitTimes(time, 1);
 
             // DATA BITS
             waitUntilTime(time);
-            gpio_set_value(4, (buf[i] >> 0) & 0x1);
+            setGPIOVal(&(unsigned long){(((buf[i] << 1) & 0b10) | ((buf[i] >> 0) & 0b01))});
             addBitTimes(time, 1);
 
             waitUntilTime(time);
-            gpio_set_value(4, (buf[i] >> 1) & 0x1);
+            setGPIOVal(&(unsigned long){(((buf[i] >> 0) & 0b10) | ((buf[i] >> 1) & 0b01))});
             addBitTimes(time, 1);
 
             waitUntilTime(time);
-            gpio_set_value(4, (buf[i] >> 2) & 0x1);
+            setGPIOVal(&(unsigned long){(((buf[i] >> 1) & 0b10) | ((buf[i] >> 2) & 0b01))});
             addBitTimes(time, 1);
 
             waitUntilTime(time);
-            gpio_set_value(4, (buf[i] >> 3) & 0x1);
+            setGPIOVal(&(unsigned long){(((buf[i] >> 2) & 0b10) | ((buf[i] >> 3) & 0b01))});
             addBitTimes(time, 1);
 
             waitUntilTime(time);
-            gpio_set_value(4, (buf[i] >> 4) & 0x1);
+            setGPIOVal(&(unsigned long){(((buf[i] >> 3) & 0b10) | ((buf[i] >> 4) & 0b01))});
             addBitTimes(time, 1);
 
             waitUntilTime(time);
-            gpio_set_value(4, (buf[i] >> 5) & 0x1);
+            setGPIOVal(&(unsigned long){(((buf[i] >> 4) & 0b10) | ((buf[i] >> 5) & 0b01))});
             addBitTimes(time, 1);
 
             waitUntilTime(time);
-            gpio_set_value(4, (buf[i] >> 6) & 0x1);
+            setGPIOVal(&(unsigned long){(((buf[i] >> 5) & 0b10) | ((buf[i] >> 6) & 0b01))});
             addBitTimes(time, 1);
 
             waitUntilTime(time);
-            gpio_set_value(4, (buf[i] >> 7) & 0x1);
+            setGPIOVal(&(unsigned long){(((buf[i] >> 6) & 0b10) | ((buf[i] >> 7) & 0b01))});
             addBitTimes(time, 1);
 
             // STOP BITS
             waitUntilTime(time);
-            gpio_set_value(4, 1);
+            setGPIOVal(&(unsigned long){0b11});
             addBitTimes(time, 2);
         }
     }
@@ -135,57 +143,70 @@ const struct proc_ops dmxProcOps = {
     .proc_write = dmxProcWrite,
 };
 
-static int __init initModule(void)
+static int initDMX(struct platform_device *device)
 {
-    printk("init aabbcc\n");
-    // buf = 0b01010101;
-
-    if (gpio_request(4, "rpi-gpio-4"))
+    printk("hi\n");
+    if (descs != NULL)
     {
-        printk(KERN_ERR "Request gpio pin 4 failed.\n");
-        goto err_none;
+        printk(KERN_ERR "DMX is already running.\n");
+        return -1;
     }
 
-    if (gpio_direction_output(4, 1))
+    descs = gpiod_get_array(&device->dev, "dmx", GPIOD_OUT_HIGH);
+    if (IS_ERR(descs))
     {
-        printk(KERN_ERR "Setting gpio pin 4 to output failed.\n");
-        goto err_free_gpio;
+        printk(KERN_ERR "GPIO init failed\n");
+        return PTR_ERR(descs);
     }
-
+    // clk = gpiod_get(&device->dev, "clk", GPIOD_OUT_LOW);
 
     dmxProc = proc_create("dmx", 0644, NULL, &dmxProcOps);
     if (dmxProc == NULL)
     {
         printk(KERN_ERR "Creating /proc/dmx failed.\n");
-        goto err_free_gpio;
+        gpiod_put_array(descs);
+        return -ENOMEM;
     }
 
     dmxThread = kthread_run(DMXThread, NULL, "DMX THREAD");
     if (!dmxThread)
     {
         printk(KERN_ERR "Could not start kthread.\n");
-        goto err_remove_proc;
+        gpiod_put_array(descs);
+        proc_remove(dmxProc);
+        return -ENOMEM;
     }
-
     return 0;
-// err_stop_thread:
-//     kthread_stop(dmxThread);
-err_remove_proc:
-    proc_remove(dmxProc);
-err_free_gpio:
-    gpio_free(4);
-err_none:
-    return -ENOMEM;
 }
 
-static void __exit exitModule(void)
+static int stopDMX(struct platform_device *device)
 {
-    kthread_stop(dmxThread);
+    printk("bye\n");
+    gpiod_set_raw_array_value(descs->ndescs, descs->desc, descs->info, &(unsigned long){0b00});
+    gpiod_put_array(descs);
+    // gpiod_put(clk);
     proc_remove(dmxProc);
-    gpio_set_value(4, 0);
-    gpio_free(4);
-    printk("exit aabbcc\n");
+    kthread_stop(dmxThread);
+    descs = NULL;
+    return 0;
 }
 
-module_init(initModule);
-module_exit(exitModule);
+static struct of_device_id of_dmx_gpio_match[] = {
+    {
+        .compatible = "gpio-dmx",
+    },
+    {},
+};
+
+MODULE_DEVICE_TABLE(of, of_dmx_gpio_match);
+
+static struct platform_driver dmxGPIO = {
+    .probe = initDMX,
+    .remove = stopDMX,
+    .driver = {
+        .name = "dmx-gpio",
+        .of_match_table = of_dmx_gpio_match,
+    },
+};
+
+module_platform_driver(dmxGPIO);
