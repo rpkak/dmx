@@ -1,6 +1,6 @@
 {
     "env": {
-        "kernel": "linux-headers-5.15.76-v8+"
+        "kernel": "linux-headers-5.15.84-v8+"
     },
     "configurations": [
         {

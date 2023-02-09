@@ -7,9 +7,8 @@
 		__overlay__ {
 			dmx {
 				compatible = "gpio-dmx";
-				dmx-gpios = <&gpio 22 0>,
-				            <&gpio 23 1>;
-				// clk-gpio = <&gpio 3 0>;
+				dmx-gpio = <&gpio 23 0>;
+				clk-gpio = <&gpio 3 0>;
 			};
 		};
 	};
